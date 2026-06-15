@@ -1,0 +1,8 @@
+{
+  "name": "Sorgummology Smart CRM",
+  "description": "Smart CRM platform for Sorgum UMKM with PHP backend and MySQL database.",
+  "requestFramePermissions": ["microphone"],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}

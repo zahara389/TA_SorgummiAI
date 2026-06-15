@@ -1,0 +1,2 @@
+const res = await uploadAdminPhoto(base64Data);
+const avatarUrl = res?.avatar || base64Data;
