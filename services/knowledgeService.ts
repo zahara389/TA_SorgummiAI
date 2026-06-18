@@ -366,7 +366,7 @@ export class KnowledgeService {
 
     try {
       const genAI = this.legacyGeminiClient || new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
-      const model = genAI.getGenerativeModel({ model: "text-embedding-004" });
+      const model = genAI.getGenerativeModel({ model: "embedding-001" });
 
       const batchSize = 100;
       const allEmbeddings: number[][] = [];

@@ -4602,7 +4602,22 @@ Pesan ini dikirim otomatis oleh sistem, mohon tidak membalas email ini.`,
   // --- CHAT SYSTEM ---
   const { GoogleGenAI } = await import("@google/genai");
   const client: any = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY || "" });
-  const SYSTEM_INSTRUCTION = `Anda adalah Sorgummi AI, asisten pintar seputar sorgum. Fokus utama Anda adalah membahas budidaya, pengelolaan, dan bisnis sorgum. JIKA user memberikan pertanyaan lanjutan atau kata ganti (seperti 'itu', 'maksudnya apa', 'jelaskan no 5') yang merujuk pada obrolan sorgum di atas, Anda HARUS menjawabnya sesuai konteks riwayat tersebut. Anda hanya boleh menolak jika user benar-benar mengubah topik secara total ke hal yang tidak ada hubungannya sama sekali dengan sorgum (misal: tanya resep rendang sapi atau tutorial ngoding). Jika menolak atau di luar topik, Anda HARUS menjawab dengan kalimat persis: "Maaf, pertanyaan Anda di luar topik. Saya hanya dapat membantu seputar sorgum." Jawab dalam Bahasa Indonesia.`;
+  const SYSTEM_INSTRUCTION = `Anda adalah "Sorgummi AI", sistem kecerdasan buatan (AI) yang bertindak sebagai Pakar Agronomi, Ahli Pertanian Modern, dan Asisten Virtual Utama di platform Sorgummi. Anda memiliki pengetahuan tingkat lanjut (advance) mengenai botani, budidaya, pengelolaan lahan, penanganan hama, pasca-panen, serta analisis nutrisi khusus untuk tanaman Sorgum (Sorghum bicolor).
+
+Tugas utama Anda adalah menjawab pertanyaan pengguna secara dinamis, akurat, ilmiah, namun tetap mudah dipahami oleh petani lokal maupun akademisi, guna mengoptimalkan hasil panen dan pemanfaatan sorgum.
+
+[STRICT BEHAVIOR AND SECURITY CONSTRAINTS - CRITICAL]
+1. ISOLASI DATA (ANTI-BUG): Sistem backend terkadang mengalami kebocoran data objek (state leaking). Jika Anda menerima input atau payload yang mengandung frasa seperti "Pesan dari form kontak", "Telp: 08123456789", atau "Belum dijawab", Anda wajib mengabaikan (IGNORE) teks tersebut 100%. Jangan pernah memasukkan teks kesalahan sistem tersebut ke dalam hasil jawaban Anda.
+2. JAWABAN DINAMIS & KONTEKSTUAL: Anda harus menghasilkan jawaban yang dinamis dan analitis secara real-time berdasarkan pertanyaan asli user. Jangan memberikan jawaban template atau jawaban kaku yang berulang-ulang.
+3. FILTRASI TOPIK (OUT-OF-TOPIC): Fokus utama Anda hanyalah ekosistem sorgum dan pertanian umum yang mendukungnya. Jika pengguna bertanya di luar topik pertanian/sorgum, jawablah: "Mohon maaf, sebagai Sorgummi AI, keahlian saya dibatasi pada ruang lingkup budidaya dan pemanfaatan tanaman sorgum. Silakan ajukan pertanyaan yang relevan."
+4. LARANGAN HALUSINASI: Jangan pernah mengarang data ilmiah atau varietas yang tidak ada. Jika Anda tidak mengetahui jawaban atau data spesifiknya, sarankan pengguna untuk berkonsultasi dengan dinas pertanian setempat.
+5. KONTEKS PERCAKAPAN & SKENARIO EKSTREM: JIKA user memberikan pertanyaan lanjutan, perbandingan iklim, atau skenario ekstrem (contoh: 'kalau musim salju?', 'kalau di kutub?', 'kalau suhu minus?'), HARUS dijawab secara ilmiah dalam konteks kelayakan tumbuh sorgum — JANGAN ditolak sebagai di luar topik.
+
+[RESPONSE STRUCTURE & FORMATTING]
+- Bahasa: Selalu gunakan Bahasa Indonesia yang baik, formal, ramah, dan solutif.
+- Format: Gunakan bullet points (-) atau penomoran (1., 2., 3.) untuk jawaban terstruktur.
+- JANGAN gunakan tanda bintang (*) atau garis bawah (_) untuk menebalkan teks. Sebagai pengganti, tulis nama penting dalam HURUF KAPITAL atau gunakan tanda kutip bila perlu.
+- Gunakan emoji kontekstual untuk membuat jawaban lebih visual dan ramah.`;
   // Prefer a lightweight model to reduce quota usage when possible
   const GEMINI_MODEL = process.env.GEMINI_MODEL || "gemini-2.5-flash";
 
@@ -4610,6 +4625,14 @@ Pesan ini dikirim otomatis oleh sistem, mohon tidak membalas email ini.`,
   console.log("GEMINI_API_KEY loaded:", !!process.env.GEMINI_API_KEY);
 
   const knowledgeService = new KnowledgeService(getData, saveData);
+
+  // Strips markdown formatting so raw asterisks never appear in chat bubbles.
+  function stripMarkdown(text: string): string {
+    return text
+      .replace(/\*\*([^*]+)\*\*/g, "$1")        // **bold** → plain
+      .replace(/\*([^*\n]+)\*/g, "$1")          // *italic* → plain
+      .replace(/^[ \t]*\*[ \t]+/gm, "- ");      // * bullet → - bullet
+  }
 
   function isSorgumTopic(message: string) {
     const msg = message.toLowerCase();
@@ -4625,6 +4648,7 @@ Pesan ini dikirim otomatis oleh sistem, mohon tidak membalas email ini.`,
       "hama",
       "penyakit",
       "brownies",
+      "browni",
       "roti",
       "kue",
       "produk",
@@ -4633,6 +4657,36 @@ Pesan ini dikirim otomatis oleh sistem, mohon tidak membalas email ini.`,
       "lahan",
       "manfaat",
       "khasiat",
+      "nutrisi",
+      "varietas",
+      "jenis",
+      // follow-up / context words
+      "asal",
+      "sejarah",
+      "dari mana",
+      "asalnya",
+      "harganya",
+      "gimana",
+      "bagaimana",
+      "cara",
+      "langkah",
+      "tepung",
+      "bibit",
+      "benih",
+      // climate / season follow-up words
+      "musim",
+      "iklim",
+      "cuaca",
+      "suhu",
+      "salju",
+      "hujan",
+      "kemarau",
+      "tropis",
+      "kutub",
+      "beku",
+      "dingin",
+      "panas",
+      "kalau",
     ];
     return keywords.some((k) => msg.includes(k));
   }
@@ -4641,13 +4695,15 @@ Pesan ini dikirim otomatis oleh sistem, mohon tidak membalas email ini.`,
     const msg = message.toLowerCase();
 
     // PRIORITY 1: pengolahan / pengelolaan
+    // Note: match "browni" as substring so "brownisnya" / "brownies" both match
     if (
       msg.includes("pengelolaan") ||
       msg.includes("pengolahan") ||
       msg.includes("mengolah") ||
+      msg.includes("olahan") ||
       msg.includes("olah") ||
       msg.includes("tepung") ||
-      msg.includes("brownies") ||
+      msg.includes("browni") ||
       msg.includes("roti") ||
       msg.includes("kue") ||
       msg.includes("produk")
@@ -4655,7 +4711,18 @@ Pesan ini dikirim otomatis oleh sistem, mohon tidak membalas email ini.`,
       return "pengolahan";
     }
 
-    // PRIORITY 2: budidaya
+    // PRIORITY 2: asal / sejarah
+    if (
+      msg.includes("asal") ||
+      msg.includes("sejarah") ||
+      msg.includes("dari mana") ||
+      msg.includes("asalnya") ||
+      msg.includes("berasal")
+    ) {
+      return "asal";
+    }
+
+    // PRIORITY 3: budidaya
     if (
       msg.includes("budidaya") ||
       msg.includes("menanam") ||
@@ -4667,7 +4734,7 @@ Pesan ini dikirim otomatis oleh sistem, mohon tidak membalas email ini.`,
       return "budidaya";
     }
 
-    // PRIORITY 3: manfaat
+    // PRIORITY 4: manfaat
     if (
       msg.includes("manfaat") ||
       msg.includes("khasiat") ||
@@ -4676,14 +4743,33 @@ Pesan ini dikirim otomatis oleh sistem, mohon tidak membalas email ini.`,
       return "manfaat";
     }
 
-    // PRIORITY 4: hama
+    // PRIORITY 5: hama
     if (msg.includes("hama") || msg.includes("penyakit")) {
       return "hama";
     }
 
-    // PRIORITY 5: panen
+    // PRIORITY 6: panen
     if (msg.includes("panen")) {
       return "panen";
+    }
+
+    // PRIORITY 7: iklim / musim / cuaca
+    if (
+      msg.includes("musim") ||
+      msg.includes("iklim") ||
+      msg.includes("cuaca") ||
+      msg.includes("suhu") ||
+      msg.includes("salju") ||
+      msg.includes("hujan") ||
+      msg.includes("kemarau") ||
+      msg.includes("tropis") ||
+      msg.includes("kutub") ||
+      msg.includes("beku") ||
+      msg.includes("frost") ||
+      msg.includes("dingin") ||
+      msg.includes("panas")
+    ) {
+      return "iklim";
     }
 
     return "general";
@@ -4694,23 +4780,126 @@ Pesan ini dikirim otomatis oleh sistem, mohon tidak membalas email ini.`,
     const words = normalized.split(/\s+/).filter(w => w.length > 2);
     const intent = detectIntent(message);
 
-    // 1. FAQ exact/substring matching first, then fallback to keyword overlap
+    // Helper checks — done EARLY so intent-based responses can use them
+    // Covers colloquial (gimana) and formal (penjelasan, panduan) how-to patterns
+    const asksHow = /\b(cara|langkah|bagaimana|gimana|jelaskan|tolong|penjelasan|panduan|tutorial|petunjuk|lengkap)\b/.test(normalized);
+    const asksWhether = /\b(apakah|bisa|bisakah|boleh|mungkin)\b/.test(normalized);
+    const asksWhat = /\b(apa itu|apa saja|apa yang|pengertian|definisi)\b/.test(normalized);
+
+    // ======================================================
+    // PRIORITY 1: INTENT-BASED ANSWERS (always most relevant)
+    // Run BEFORE FAQ/article keyword matching to avoid mismatch
+    // ======================================================
+
+    if (intent === "budidaya") {
+      if (asksHow) {
+        return `Tentu! Berikut panduan lengkap menanam sorgum agar hasilnya optimal:\n\n1. Persiapan Lahan
+   - Bersihkan lahan dari gulma dan sisa tanaman sebelumnya.
+   - Lakukan pengolahan tanah (bajak/cangkul) sedalam 20-30 cm hingga gembur.
+   - Buat bedengan atau alur tanam dengan drainase yang baik.
+\n2. Pemilihan Benih Unggul
+   - Gunakan varietas tahan kering seperti BIOGUMA AGRITAN, NUMBU, KAWALI, atau SUPER-2.
+   - Pastikan benih bersertifikat dan bebas dari hama/penyakit.
+\n3. Waktu Tanam
+   - Tanam di awal musim hujan (Oktober-November) agar kebutuhan air awal terpenuhi secara alami.
+   - Di lahan irigasi, penanaman bisa dilakukan sepanjang tahun.
+\n4. Penanaman
+   - Buat lubang tanam dengan jarak 70 cm x 20 cm antar baris.
+   - Masukkan 2-3 benih per lubang sedalam 3-5 cm, lalu tutup tanah tipis.
+   - Setelah tumbuh, lakukan penjarangan: sisakan 1-2 tanaman terkuat per lubang.
+\n5. Pemupukan
+   - Pupuk dasar: NPK 15-15-15 dosis 200 kg/ha saat tanam.
+   - Pupuk susulan: Urea 100 kg/ha pada umur 30 hari setelah tanam (HST).
+\n6. Perawatan Rutin
+   - Penyiangan gulma dilakukan pada umur 2 dan 4 minggu.
+   - Siram secara cukup pada fase vegetatif awal (0-30 HST) dan fase pengisian biji.
+   - Pantau serangan hama aphid, penggerek batang, dan burung saat fase berbunga.
+\n7. Panen
+   - Sorgum siap dipanen umur 90-120 HST.
+   - Ciri: biji mengeras, malai menguning/kecoklatan, kadar air biji sekitar 20%.
+   - Potong malai, jemur 2-3 hari, lalu rontokkan dan keringkan biji hingga kadar air 14%.`;
+      }
+      if (asksWhether) {
+        return `Ya, **sorgum dapat ditanam** di berbagai kondisi lahan:\n\n- ✅ Tahan kekeringan — cocok di lahan tadah hujan\n- ✅ Adaptif di tanah marginal / kurang subur\n- ✅ Dapat ditanam di lahan bekas padi atau jagung\n- ⚠️ Hindari lahan yang sering tergenang air karena rentan busuk akar\n\nVarietas yang direkomendasikan: **Numbu**, **Kawali**, **Super-2**.`;
+      }
+      if (asksWhat) {
+        return `**Budidaya sorgum** adalah proses penanaman dan pemeliharaan tanaman *Sorghum bicolor* dari benih hingga panen.\n\nKeunggulan utama budidaya sorgum:\n- 🌾 Tahan kekeringan ekstrem\n- 💧 Kebutuhan air 30–40% lebih sedikit dibanding jagung\n- 🌱 Dapat tumbuh di tanah marginal / kurang subur\n- ⏱️ Umur panen relatif singkat: 90–120 hari`;
+      }
+      return `**Budidaya sorgum** cocok dilakukan di lahan kering maupun tadah hujan.\n\nFaktor kunci keberhasilan:\n- 🌱 Pilih varietas tahan kering (**Numbu**, **Bioguma Agritan**)\n- 🌍 Olah tanah minimal, jaga struktur tanah\n- 💧 Irigasi cukup pada fase vegetatif awal (0–30 hari)\n- 🌿 Pemupukan berimbang N-P-K sesuai analisis tanah`;
+    }
+
+    if (intent === "asal") {
+      return `**Sorgum** (*Sorghum bicolor*) berasal dari **Afrika Timur**, tepatnya wilayah **Etiopia (Abyssinia) dan Sudan**, yang diyakini sebagai pusat domestikasi utama tanaman ini sekitar 5.000–8.000 tahun yang lalu.\n\n**Jalur Penyebaran:**\n- 🌍 Afrika Timur → Mesir → Timur Tengah → Asia Selatan\n- 🌏 Masuk ke **Indonesia** diperkirakan pada era kolonial Belanda abad ke-17, kemudian berkembang di Jawa dan Nusa Tenggara\n- 🌐 Kini sorgum dibudidayakan di lebih dari 100 negara, menjadikannya sereal terpenting ke-5 di dunia\n\n**Fakta Singkat:**\n- Nama ilmiah: *Sorghum bicolor* (L.) Moench\n- Famili: **Poaceae** (rumput-rumputan)\n- Di Indonesia, sentra produksi terbesar berada di **Nusa Tenggara Timur, Jawa Tengah, dan DIY**`;
+    }
+
+    if (intent === "pengolahan") {
+      // Brownie-specific answer
+      const asksBrownie = /browni/.test(normalized);
+      if (asksBrownie && asksHow) {
+        return `Berikut cara membuat **brownies sorgum** yang lezat:\n\n1. **Siapkan Bahan**: 150g tepung sorgum, 100g gula, 80g mentega, 2 butir telur, 50g coklat bubuk, 1 sdt baking powder, sedikit garam.\n2. **Campur Basah**: Lelehkan mentega + coklat, lalu aduk bersama gula dan telur hingga rata.\n3. **Gabungkan Kering**: Masukkan tepung sorgum, baking powder, dan garam. Aduk hingga adonan kalis.\n4. **Tambahkan Pengikat**: Karena tepung sorgum bebas gluten, tambahkan **1 sdt xanthan gum** agar tekstur tidak rapuh.\n5. **Panggang**: Tuang ke loyang 20×20 cm, panggang di **170°C selama 25–30 menit**. Tusuk dengan lidi — jika bersih, brownies matang.\n\n💡 **Tip**: Tambahkan kacang mede atau chocolate chips untuk tekstur yang lebih kaya.`;
+      }
+      if (asksHow) {
+        return `Langkah **pengolahan sorgum** menjadi produk pangan:\n\n1. **Pembersihan Biji**: Pisahkan biji dari kotoran, kerikil, dan biji rusak menggunakan ayakan.\n2. **Pengeringan**: Jemur biji di bawah sinar matahari hingga kadar air ≤ 14% untuk mencegah jamur.\n3. **Penggilingan**: Giling biji kering menggunakan mesin penggiling menjadi tepung kasar atau halus.\n4. **Pengayakan Tepung**: Ayak tepung untuk mendapatkan tekstur sesuai kebutuhan (60–80 mesh untuk roti/kue).\n5. **Formulasi Produk**: Campur **tepung sorgum** dengan bahan pengikat (telur, xanthan gum) untuk produk bakery.\n6. **Pengolahan Akhir**: Panggang, kukus, atau goreng sesuai jenis produk (roti, cookies, sereal, snack).`;
+      }
+      return `**Sorgum** dapat diolah menjadi berbagai produk bernilai tinggi:\n\n- 🌾 **Tepung Sorgum**: untuk roti, mie, dan kue (bebas gluten)\n- 🍪 **Cookies & Snack**: camilan sehat bergizi tinggi\n- 🥣 **Sereal & Flake**: sarapan bergizi untuk anak-anak\n- 🍺 **Minuman Fermentasi**: bahan baku bir tradisional dan bioethanol`;
+    }
+
+    if (intent === "manfaat") {
+      if (asksWhat) {
+        return `**Sorgum** (*Sorghum bicolor*) adalah tanaman serealia penghasil biji yang kaya nutrisi.\n\nKandungan gizi per 100g sorgum:\n- 🔥 Energi: ~329 kkal\n- 🌾 Karbohidrat: 72g\n- 💪 Protein: 11g\n- 🫶 Serat: 6g\n- 🚫 **Bebas Gluten** — cocok untuk penderita celiac disease`;
+      }
+      return `**Manfaat utama sorgum** bagi kesehatan dan pertanian:\n\n- 💊 **Bebas gluten** — aman untuk penderita intoleransi gluten\n- 🩸 **Indeks glikemik rendah** — cocok untuk penderita diabetes\n- 🌿 **Kaya antioksidan** — mengandung polifenol dan tanin\n- 🌍 **Ramah lingkungan** — kebutuhan air jauh lebih rendah dari padi\n- 💰 **Nilai ekonomis tinggi** — potensi ekspor dan industri pangan lokal`;
+    }
+
+    if (intent === "hama") {
+      return `**Pengendalian hama dan penyakit** pada tanaman sorgum:\n\n**Hama Utama:**\n- 🪲 **Aphid (Rhopalosiphum maidis)**: semprotkan insektisida **Imidakloprid** atau gunakan predator alami seperti ladybug\n- 🐛 **Penggerek Batang (Chilo partellus)**: aplikasikan **Beauveria bassiana** (agen hayati) atau insektisida karbofuran\n- 🐦 **Burung**: pasang jaring atau pengusir burung saat fase pengisian biji\n\n**Penyakit Utama:**\n- 🍄 **Anthraknosa**: gunakan fungisida berbahan **Mankozeb**, rotasi tanaman\n- 🌿 **Karat Daun**: pilih varietas tahan, semprot fungisida **Propikonazol**\n\n**Strategi PHT (Pengendalian Hama Terpadu)**: Prioritaskan pengendalian biologis sebelum kimiawi.`;
+    }
+
+    if (intent === "panen") {
+      return `Panduan panen dan pasca panen sorgum:\n\nCiri Siap Panen:\n- Umur tanaman: 90-120 hari setelah tanam\n- Malai/biji sudah mengeras dan berwarna kecoklatan\n- Kadar air biji di bawah atau sama dengan 20%\n\nLangkah Panen:\n1. Potong malai menggunakan sabit di pagi hari saat embun kering\n2. Ikat dan kumpulkan malai, jemur 2-3 hari di bawah sinar matahari\n3. Rontokkan biji dari malai menggunakan alat perontok atau manual\n\nPasca Panen:\n- Keringkan biji hingga kadar air 14% sebelum disimpan\n- Simpan dalam karung goni atau silo kedap udara\n- Hindari penyimpanan di tempat lembap untuk mencegah aflatoksin`;
+    }
+
+    if (intent === "iklim") {
+      const mentionsSalju = /salju|beku|kutub|minus|frost|salj/.test(normalized);
+      const mentionsKemarau = /kemarau|kering/.test(normalized);
+      const mentionsHujan = /hujan|basah|banjir|tergenang/.test(normalized);
+
+      if (mentionsSalju) {
+        return `Sorgum adalah tanaman TROPIS/SUBTROPIS yang tidak dapat tumbuh di musim salju atau kondisi beku.\n\nSyarat suhu tumbuh sorgum:\n- Suhu optimal: 23 derajat C - 30 derajat C\n- Suhu minimum perkecambahan: 15 derajat C\n- Di bawah 10 derajat C: pertumbuhan terhenti total\n- Di bawah 0 derajat C (beku/salju): tanaman akan mati membeku\n\nJika ingin tetap menanam di daerah bersalju:\n- Gunakan greenhouse atau rumah kaca yang dipanaskan\n- Tanam dalam pot yang bisa dipindah ke ruangan hangat\n- Di negara 4 musim, tanam hanya pada musim semi atau musim panas`;
+      }
+      if (mentionsKemarau) {
+        return `Sorgum justru sangat cocok di musim kemarau! Ini adalah salah satu keunggulan utamanya.\n\nKetahanan sorgum terhadap kemarau:\n- Tahan kekeringan berkat sistem akar dalam dan daun berlapis lilin\n- Kebutuhan air 30-40% lebih sedikit dibanding jagung\n- Dapat memasuki dormansi sementara saat stres air, lalu pulih kembali\n\nTips di musim kemarau:\n- Siram pada fase vegetatif awal (0-30 hari) dan fase pengisian biji\n- Mulsa tanah untuk mengurangi penguapan\n- Pilih varietas tahan kering seperti Numbu atau Super-2`;
+      }
+      if (mentionsHujan) {
+        return `Sorgum dapat tumbuh di musim hujan, namun perlu pengelolaan drainase yang baik.\n\nKondisi musim hujan untuk sorgum:\n- Curah hujan ideal: 400-750 mm per musim tanam\n- Hindari lahan yang tergenang karena rentan busuk akar\n- Hujan berlebih saat fase berbunga bisa menurunkan kualitas biji\n\nRekomendasi:\n- Buat bedengan atau guludan untuk drainase optimal\n- Pilih varietas tahan penyakit jamur yang lebih mungkin muncul di kondisi lembap\n- Pantau hama wereng dan jamur Anthraknosa yang aktif di musim hujan`;
+      }
+      return `Sorgum adalah tanaman yang sangat adaptif terhadap berbagai kondisi iklim tropis.\n\nRentang iklim ideal sorgum:\n- Suhu optimal: 23-30 derajat C\n- Curah hujan: 400-750 mm per musim\n- Ketinggian: 0-1.500 mdpl\n- Cocok di iklim kering hingga semi-lembap\n\nSorgum TIDAK cocok untuk:\n- Suhu di bawah 10 derajat C (pertumbuhan terhenti)\n- Kondisi beku/salju (tanaman mati)\n- Lahan yang tergenang permanen`;
+    }
+
+    // ======================================================
+    // PRIORITY 2: FAQ EXACT/KEYWORD MATCHING
+    // ======================================================
     let bestFaqMatch: any = null;
     let maxFaqOverlap = 0;
 
     const faqs = db.faqs || [];
     for (const faq of faqs) {
-      const faqQ = (faq.question || "").toLowerCase().replace(/[?.!,;:]/g, "").trim();
+      const faqCategory = (faq.category || "").toLowerCase();
+      if (faqCategory === "kontak" || faqCategory === "contact") continue;
+      const faqAnswer = (faq.answer || "").toLowerCase();
+      if (faqAnswer.startsWith("belum dijawab") || faqAnswer.includes("pesan dari form kontak") || faqAnswer.includes("08123456789")) continue;
+      const faqQuestion = (faq.question || "").toLowerCase();
+      if (faqQuestion.startsWith("[pesan dari")) continue;
+
+      const faqQ = faqQuestion.replace(/[?.!,;:]/g, "").trim();
       if (!faqQ) continue;
 
-      // Exact match or full containment
       if (normalized.includes(faqQ) || faqQ.includes(normalized)) {
         bestFaqMatch = faq;
-        maxFaqOverlap = 999; // maximum priority
+        maxFaqOverlap = 999;
         break;
       }
 
-      // Keyword overlap
       const faqWords = faqQ.split(/\s+/).filter((w: string) => w.length > 2);
       const overlap = words.filter(w => faqWords.includes(w)).length;
       if (overlap > maxFaqOverlap && overlap > 0) {
@@ -4753,14 +4942,7 @@ Pesan ini dikirim otomatis oleh sistem, mohon tidak membalas email ini.`,
       return bestArticleMatch.content || bestArticleMatch.description;
     }
 
-    // Helper checks
-    const asksHow = /\b(cara|langkah|bagaimana)\b/.test(normalized);
-    const asksWhether =
-      /\b(apakah|bisa)\b/.test(normalized) &&
-      /\b(bisa|mungkinkah)\b/.test(normalized);
-    const asksWhat = /\b(apa itu|apa itu sorgum|apa itu tepung)\b/.test(
-      normalized,
-    );
+    // (asksHow, asksWhether, asksWhat already declared above at the top of this function)
 
     // Intent-based fallbacks
     if (intent === "pengolahan") {
@@ -5031,9 +5213,9 @@ Aturan Umum:
 - Langsung ke inti, jangan ulangi konteks lama.
 
 Aturan Khusus:
-- Jika pertanyaan mengandung kata "cara", "langkah", atau "bagaimana":
-  - Jawab dalam format bernomor (1., 2., 3.) dengan maksimal 5 langkah.
-  - Setiap langkah berisi perintah singkat diikuti penjelasan 1 kalimat.
+- Jika pertanyaan mengandung kata "cara", "langkah", "bagaimana", "gimana", atau "penjelasan lengkap":
+  - Jawab dalam format bernomor (1., 2., 3., dst.) secara LENGKAP hingga selesai. Jangan potong di tengah.
+  - Setiap langkah berisi perintah singkat diikuti penjelasan 1-2 kalimat.
 - Jika pertanyaan mengandung "apakah bisa":
   - Jawab dimulai dengan "Ya" atau "Tidak", lalu berikan penjelasan singkat dan contoh penggunaan/analog.
 - Jika pertanyaan mengandung "apa itu":
@@ -5091,8 +5273,8 @@ ${message}
               systemInstruction: SYSTEM_INSTRUCTION,
               temperature: 0.7,
               topP: 0.8,
-              topK: 20,
-              maxOutputTokens: 700,
+              topK: 40,
+              maxOutputTokens: 2000,
             },
           });
           result = await chat.sendMessage({
@@ -5138,7 +5320,7 @@ ${message}
           );
         }
 
-        let fallbackResponse = getLocalFallbackAnswer(message, db);
+        let fallbackResponse = stripMarkdown(getLocalFallbackAnswer(message, db));
 
         if (!fallbackResponse && knowledgeContext && knowledgeContext.length > 0) {
           fallbackResponse = `${knowledgeContext[0].snippet}`;
@@ -5162,12 +5344,12 @@ ${message}
         }
       } else {
         try {
-          botResponse = result.text || "";
+          botResponse = stripMarkdown(result.text || "");
           const rawCandidateText =
             (result as any).candidates?.[0]?.content?.text ||
             (result as any).candidates?.[0]?.text;
           if (!botResponse && rawCandidateText) {
-            botResponse = rawCandidateText;
+            botResponse = stripMarkdown(rawCandidateText);
           }
           console.log(
             `[Chat API] Gemini response received (attempt ${attempt})`,
@@ -5180,7 +5362,7 @@ ${message}
             console.warn(
               "[Chat API] Gemini returned no text, using local fallback.",
             );
-            const fallback = getLocalFallbackAnswer(message, db);
+            const fallback = stripMarkdown(getLocalFallbackAnswer(message, db));
             console.log("[Chat API] Local fallback answer used:", fallback);
             if (fallback) {
               botResponse = fallback;
@@ -5195,7 +5377,7 @@ ${message}
           if (botResponse && botResponse.trim().length > 0) {
             status = "success";
           } else {
-            const fallback = getLocalFallbackAnswer(message, db);
+            const fallback = stripMarkdown(getLocalFallbackAnswer(message, db));
             botResponse = fallback || "Sorgum adalah tanaman pangan yang tahan kering.";
             status = "fallback";
           }
@@ -5237,7 +5419,7 @@ ${message}
         console.log(
           "[Chat API] Using local fallback due to unexpected error.",
         );
-        let fallbackResponse = getLocalFallbackAnswer(message, db);
+        let fallbackResponse = stripMarkdown(getLocalFallbackAnswer(message, db));
 
         if (!fallbackResponse && knowledgeContext && knowledgeContext.length > 0) {
           fallbackResponse = `${knowledgeContext[0].snippet}`;
@@ -5259,6 +5441,20 @@ ${message}
           status = "fallback";
         }
       }
+    }
+
+    // Defense-in-depth: Sanitize botResponse to remove any leaked contact form data
+    const contactLeakPatterns = [
+      /Belum dijawab\s*\(Pesan dari form kontak[^)]*\)/gi,
+      /\(Pesan dari form kontak[^)]*\)/gi,
+      /Belum dijawab\s*$/gi,
+    ];
+    for (const pattern of contactLeakPatterns) {
+      botResponse = botResponse.replace(pattern, "").trim();
+    }
+    // If sanitization emptied the response, use a safe generic fallback
+    if (!botResponse || botResponse.length < 5) {
+      botResponse = "Sorgum adalah tanaman pangan yang tahan kekeringan dan serbaguna. Silakan ajukan pertanyaan yang lebih spesifik tentang budidaya, pengolahan, atau manfaat sorgum.";
     }
 
     // Save Bot Message to MySQL
@@ -5297,12 +5493,16 @@ ${message}
         user_email: user_email || "Anonymous",
         question: message,
         answer: botResponse,
-        status: (status === "success" || status === "success_fallback") ? "SUCCESS" : "FAILED",
+        status: status === "success"
+          ? "SUCCESS"
+          : (status === "success_fallback" || status === "fallback")
+            ? "FALLBACK"
+            : "FAILED",
         latency: Date.now() - startTime,
         tokens: tokens,
         prompt: finalPrompt,
         raw_response: result ? JSON.parse(JSON.stringify(result)) : null,
-        confidence: (status === "success" || status === "success_fallback") ? 0.95 : 0.2,
+        confidence: status === "success" ? 0.95 : (status === "success_fallback" || status === "fallback") ? 0.75 : 0.2,
         error_message: geminiError ? geminiError.message : null,
         created_at: new Date().toISOString(),
       };
@@ -5344,7 +5544,7 @@ ${message}
         "maaf, saya tidak tahu",
       ];
       const isDontKnow = dontKnowPatterns.some((pattern) => lowerAnswer.includes(pattern));
-      const isFailed = status !== "success" && status !== "success_fallback";
+      const isFailed = status !== "success" && status !== "success_fallback" && status !== "fallback";
       const isLowConfidence = chatLog.confidence < 0.5;
 
       if (isDontKnow || isFailed || isLowConfidence) {

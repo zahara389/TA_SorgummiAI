@@ -602,6 +602,12 @@ const ChatbotMonitor: React.FC<ChatbotMonitorProps> = ({
                     </option>
                     <option
                       className={isDarkMode ? "bg-[#111814]" : "bg-white"}
+                      value="FALLBACK"
+                    >
+                      Fallback
+                    </option>
+                    <option
+                      className={isDarkMode ? "bg-[#111814]" : "bg-white"}
                       value="FAILED"
                     >
                       Failed
@@ -699,12 +705,24 @@ const ChatbotMonitor: React.FC<ChatbotMonitorProps> = ({
                     </p>
                     <div className="flex items-center justify-between">
                       <div
-                        className={`text-[7px] md:text-[8px] font-black uppercase tracking-widest flex items-center gap-1.5 ${chat.status === "SUCCESS" ? (isDarkMode ? "text-brand-accent" : "text-brand-primary") : chat.status === "FAILED" ? (isDarkMode ? "text-red-400" : "text-red-600") : (isDarkMode ? "text-white/40" : "text-gray-500")}`}
+                        className={`text-[7px] md:text-[8px] font-black uppercase tracking-widest flex items-center gap-1.5 ${
+                          chat.status === "SUCCESS" || chat.status === "success"
+                            ? (isDarkMode ? "text-brand-accent" : "text-brand-primary")
+                            : chat.status === "FALLBACK" || chat.status === "fallback" || chat.status === "success_fallback"
+                              ? (isDarkMode ? "text-amber-400" : "text-amber-600")
+                              : (isDarkMode ? "text-red-400" : "text-red-600")
+                        }`}
                       >
                         <span
-                          className={`w-1 h-1 md:w-1.5 md:h-1.5 rounded-full animate-pulse transition-all shadow-sm ${chat.status === "SUCCESS" ? (isDarkMode ? "bg-brand-accent shadow-brand-accent/20" : "bg-brand-primary shadow-brand-primary/20") : chat.status === "FAILED" ? "bg-red-500 shadow-red-500/20" : "bg-white/20 shadow-white/10"}`}
+                          className={`w-1 h-1 md:w-1.5 md:h-1.5 rounded-full animate-pulse transition-all shadow-sm ${
+                            chat.status === "SUCCESS" || chat.status === "success"
+                              ? (isDarkMode ? "bg-brand-accent shadow-brand-accent/20" : "bg-brand-primary shadow-brand-primary/20")
+                              : chat.status === "FALLBACK" || chat.status === "fallback" || chat.status === "success_fallback"
+                                ? "bg-amber-400 shadow-amber-400/20"
+                                : "bg-red-500 shadow-red-500/20"
+                          }`}
                         />
-                        {chat.status}
+                        {chat.status === "success_fallback" || chat.status === "fallback" ? "FALLBACK" : chat.status}
                       </div>
                       <button
                         onClick={() => handleOpenDetail(chat)}
@@ -995,16 +1013,20 @@ const ChatbotMonitor: React.FC<ChatbotMonitorProps> = ({
                 </div>
                 <div
                   className={`px-3 py-1 rounded-full text-[8px] md:text-[9px] font-black uppercase tracking-widest border ${
-                    selectedChat.status === "SUCCESS" || selectedChat.status === "Success"
+                    selectedChat.status === "SUCCESS" || selectedChat.status === "success"
                       ? isDarkMode
                         ? "bg-brand-accent/10 border-brand-accent/20 text-brand-accent"
                         : "bg-brand-primary/10 border-brand-primary/20 text-brand-primary"
-                      : isDarkMode
-                        ? "bg-red-500/10 border-red-500/20 text-red-500"
-                        : "bg-red-50 border-red-200 text-red-600"
+                      : selectedChat.status === "FALLBACK" || selectedChat.status === "fallback" || selectedChat.status === "success_fallback"
+                        ? isDarkMode
+                          ? "bg-amber-500/10 border-amber-500/20 text-amber-400"
+                          : "bg-amber-50 border-amber-200 text-amber-600"
+                        : isDarkMode
+                          ? "bg-red-500/10 border-red-500/20 text-red-500"
+                          : "bg-red-50 border-red-200 text-red-600"
                   }`}
                 >
-                  {selectedChat.status}
+                  {selectedChat.status === "success_fallback" || selectedChat.status === "fallback" ? "FALLBACK" : selectedChat.status}
                 </div>
               </div>
 
@@ -1084,8 +1106,8 @@ const ChatbotMonitor: React.FC<ChatbotMonitorProps> = ({
                   </pre>
                 </div>
 
-                {/* Error Box if FAILED */}
-                {(selectedChat.status === "FAILED" || selectedChat.status === "Failed") && (selectedChat.errorMessage || selectedChat.errorStack) && (
+                {/* Error Box if non-success */}
+                {(selectedChat.status !== "SUCCESS" && selectedChat.status !== "success") && (selectedChat.errorMessage || selectedChat.errorStack) && (
                   <div className={`p-3.5 rounded-xl border mt-3 ${isDarkMode ? "bg-red-950/20 border-red-900/30" : "bg-red-50 border-red-200"}`}>
                     <p className={`text-[8px] md:text-[9px] font-black uppercase tracking-widest text-red-500 mb-1`}>
                       Error Details ({selectedChat.errorCode || "UNKNOWN"})
